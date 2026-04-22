@@ -510,8 +510,15 @@ export default function App() {
               <div className="toolbar-group">
                 <label style={{ fontSize: '12px', color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: '4px' }}>
                   分辨率:
-                  <select value={res} onChange={e => setRes(Number(e.target.value))} style={{ marginLeft: '8px' }}>
-                    {[8, 16, 32, 48, 64, 128, 256].map(r => (
+                  <select value={res} onChange={e => {
+                    const newRes = Number(e.target.value);
+                    if (newRes > versionConf.maxResolution) {
+                      alert(`分辨率不能超过 ${versionConf.maxResolution}（${version}版本限制）`);
+                      return;
+                    }
+                    setRes(newRes);
+                  }} style={{ marginLeft: '8px' }}>
+                    {[8, 16, 32, 48, 64, 128, 256].filter(r => r <= versionConf.maxResolution).map(r => (
                       <option key={r} value={r}>{r}x{r}</option>
                     ))}
                   </select>
@@ -857,7 +864,7 @@ export default function App() {
               </div>
             )}
 
-            {showPresetPanel && (
+            {versionConf.animationPresets && showPresetPanel && (
               <div style={{ marginBottom: '8px' }}>
                 {getAnimationCategories().map(cat => (
                   <div key={cat.id} style={{ marginBottom: '8px' }}>
@@ -896,13 +903,15 @@ export default function App() {
               >
                 动画组
               </button>
-              <button
-                className="btn btn-secondary"
-                style={{ width: '100%', justifyContent: 'center' }}
-                onClick={() => setShowGifPanel(true)}
-              >
-                🎬 导入 GIF
-              </button>
+              {versionConf.gifImport && (
+                <button
+                  className="btn btn-secondary"
+                  style={{ width: '100%', justifyContent: 'center' }}
+                  onClick={() => setShowGifPanel(true)}
+                >
+                  🎬 导入 GIF
+                </button>
+              )}
             </div>
           </div>
 
@@ -1422,6 +1431,10 @@ export default function App() {
 
                   try {
                     const gifFrames = await loadGIFFrames(file);
+                    if (frames.length + gifFrames.length > versionConf.maxFrames) {
+                      alert(`GIF有${gifFrames.length}帧，当前${frames.length}帧，相加后超出${versionConf.maxFrames}帧限制（${version}版本限制）`);
+                      return;
+                    }
                     for (const { img, delay } of gifFrames) {
                       const frame: Frame = {
                         id: `frame_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
