@@ -1,0 +1,1 @@
+{"root":["./src/App.tsx","./src/main.tsx","./src/vite-env.d.ts","./src/data/palettes.ts","./src/data/templates.ts","./src/hooks/useExport.ts","./src/hooks/useImageProcessor.ts","./src/hooks/usePalette.ts","./src/types/index.ts","./src/utils/export.ts","./src/utils/pixelate.ts","./src/utils/xbr.ts"],"version":"5.6.3"}
