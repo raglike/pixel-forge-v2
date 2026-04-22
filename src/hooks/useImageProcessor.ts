@@ -31,11 +31,12 @@ export function useImageProcessor(
         canvas,
         options.resolution,
         paletteRgb,
-        options.colorCount
+        options.colorCount,
+        options.scalingAlgorithm
       );
       return canvas;
     },
-    [options.resolution, options.colorCount]
+    [options.resolution, options.colorCount, options.scalingAlgorithm]
   );
 
   const processFile = useCallback(

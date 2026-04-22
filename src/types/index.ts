@@ -129,7 +129,7 @@ export interface ExportData {
   palette: string[];
 }
 
-export type ScalingAlgorithm = 'bilinear' | 'xbr-2x' | 'xbr-3x' | 'xbr-4x';
+export type ScalingAlgorithm = 'bilinear' | 'nearest-neighbor' | 'xbr-2x' | 'xbr-3x' | 'xbr-4x';
 
 export type PaletteMode = 'auto' | 'fixed';
 

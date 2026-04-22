@@ -87,7 +87,8 @@ export function processImageToCanvas(
   targetCanvas: HTMLCanvasElement,
   targetRes: number,
   paletteRgb: [number, number, number][],
-  numColors: number
+  numColors: number,
+  scalingAlgorithm: 'bilinear' | 'nearest-neighbor' | 'xbr-2x' | 'xbr-3x' | 'xbr-4x' = 'bilinear'
 ): void {
   if (!imgEl || !imgEl.complete || imgEl.naturalWidth === 0) return;
 
@@ -106,7 +107,22 @@ export function processImageToCanvas(
   targetCanvas.width = targetRes;
   targetCanvas.height = targetRes;
   const targetCtx = targetCanvas.getContext('2d')!;
-  targetCtx.imageSmoothingEnabled = false;
+
+  // Apply scaling algorithm
+  if (scalingAlgorithm === 'nearest-neighbor') {
+    // Nearest neighbor: disable smoothing for crisp pixels
+    targetCtx.imageSmoothingEnabled = false;
+    // @ts-expect-error - vendor-prefixed versions for older browsers
+    targetCtx.mozImageSmoothingEnabled = false;
+    // @ts-expect-error - vendor-prefixed versions for older browsers
+    targetCtx.webkitImageSmoothingEnabled = false;
+    // @ts-expect-error - vendor-prefixed versions for older browsers
+    targetCtx.msImageSmoothingEnabled = false;
+  } else {
+    // Bilinear for other algorithms (xBR is applied separately)
+    targetCtx.imageSmoothingEnabled = scalingAlgorithm === 'bilinear';
+  }
+
   targetCtx.drawImage(tempCanvas, 0, 0, targetRes, targetRes);
 
   const pixelData = targetCtx.getImageData(0, 0, targetRes, targetRes);

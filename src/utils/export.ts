@@ -233,3 +233,58 @@ export async function exportTexturePacker(options: ExportOptions): Promise<void>
   const blob = new Blob([tpsXml], { type: 'application/xml' });
   saveAs(blob, `${projectName || 'spritesheet'}.tps`);
 }
+
+/**
+ * Export palette as .hex file (one color per line)
+ */
+export function exportPaletteHex(colors: string[], paletteName: string): void {
+  const content = colors.map(c => c.startsWith('#') ? c : '#' + c).join('\n');
+  const blob = new Blob([content], { type: 'text/plain' });
+  saveAs(blob, `${paletteName || 'palette'}.hex`);
+}
+
+/**
+ * Export palette as .json file
+ */
+export function exportPaletteJson(
+  colors: string[],
+  paletteName: string,
+  metadata?: { description?: string; tags?: string[] }
+): void {
+  const paletteData = {
+    name: paletteName,
+    colors: colors.map(c => c.startsWith('#') ? c : '#' + c),
+    ...(metadata || {}),
+  };
+  const blob = new Blob([JSON.stringify(paletteData, null, 2)], { type: 'application/json' });
+  saveAs(blob, `${paletteName || 'palette'}.json`);
+}
+
+/**
+ * Export palette as .pal file (JASC PAL format, used by Paint Shop Pro and others)
+ */
+export function exportPalettePal(colors: string[], paletteName: string): void {
+  // JASC PAL format
+  let content = 'JASC-PAL\n';
+  content += '0100\n';
+  content += `${colors.length}\n`;
+
+  for (const color of colors) {
+    let hex = color.startsWith('#') ? color.slice(1) : color;
+    // Handle 3-digit hex
+    if (hex.length === 3) {
+      hex = hex[0] + hex[0] + hex[1] + hex[1] + hex[2] + hex[2];
+    }
+    if (hex.length === 6) {
+      const r = parseInt(hex.slice(0, 2), 16);
+      const g = parseInt(hex.slice(2, 4), 16);
+      const b = parseInt(hex.slice(4, 6), 16);
+      content += `${r} ${g} ${b}\n`;
+    } else {
+      content += '0 0 0\n';
+    }
+  }
+
+  const blob = new Blob([content], { type: 'text/plain' });
+  saveAs(blob, `${paletteName || 'palette'}.pal`);
+}

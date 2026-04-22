@@ -4,6 +4,8 @@ import { usePalette, usePaletteEditor } from '@/hooks/usePalette';
 import { useExport } from '@/hooks/useExport';
 import { BUILTIN_PALETTES, getAllPalettes, getCategories } from '@/data/palettes';
 import { getAllTemplates, getAnimationCategories, getStateMachinePresets } from '@/data/templates';
+import { loadGIFFrames } from '@/utils/gifParser';
+import { exportPaletteHex, exportPaletteJson, exportPalettePal } from '@/utils/export';
 import type { Frame, VersionConfig, ScalingAlgorithm, ProjectMeta, StateMachine, AnimGroup, LoopMode } from '@/types';
 
 const VERSION_CONFIG: Record<string, VersionConfig> = {
@@ -151,6 +153,7 @@ export default function App() {
   const [asepriteLayerName, setAsepriteLayerName] = useState('Layer 1');
   const [_asepriteFrameTags, _setAsepriteFrameTags] = useState('');
   const [showGifPanel, setShowGifPanel] = useState(false);
+  const [paletteExportFormat, setPaletteExportFormat] = useState<'hex' | 'json' | 'pal'>('hex');
 
   const filteredPalettes = paletteSearchQuery
     ? getAllPalettes().filter(
@@ -390,35 +393,35 @@ export default function App() {
   }, []);
 
   return (
-    <div className="min-h-screen bg-[var(--bg-main)]">
-      <header className="bg-white border-b border-[var(--border)] px-4 py-3 flex items-center justify-between">
-        <div className="flex items-center gap-4">
-          <h1 className="text-xl font-semibold text-[var(--text-primary)]">PixelForge</h1>
+    <div style={{ minHeight: '100vh', background: 'var(--bg-main)' }}>
+      <header style={{ background: '#fff', borderBottom: '1px solid var(--border)', padding: '12px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }} className="header-flex">
+        <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+          <h1 style={{ fontSize: '18px', fontWeight: 600, color: 'var(--text-primary)' }}>PixelForge</h1>
           <span className="badge badge-pro">v2.0</span>
         </div>
-        <div className="flex items-center gap-3">
-          <span className="text-sm text-[var(--text-muted)]">{projectMeta.name}</span>
-          <button className="btn btn-secondary text-sm" onClick={() => setShowProjectModal(true)}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+          <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>{projectMeta.name}</span>
+          <button className="btn btn-secondary" style={{ fontSize: '12px' }} onClick={() => setShowProjectModal(true)}>
             项目
           </button>
-          <button className="btn btn-secondary text-sm" onClick={() => setShowExportModal(true)}>
+          <button className="btn btn-secondary" style={{ fontSize: '12px' }} onClick={() => setShowExportModal(true)}>
             导出
           </button>
-          <button className="btn btn-secondary text-sm" onClick={() => setShowVersionModal(true)}>
+          <button className="btn btn-secondary" style={{ fontSize: '12px' }} onClick={() => setShowVersionModal(true)}>
             {version === 'pro' ? 'Pro' : version === 'enterprise' ? 'Enterprise' : 'Free'}
           </button>
         </div>
       </header>
 
-      <div className="flex">
-        <div className="flex-1 p-4">
+      <div className="flex app-layout">
+        <div style={{ flex: 1, padding: '16px' }} className="main-content">
           <div className="card">
             <div className="card-header">
               <span className="title-text">画布</span>
               <div className="toolbar-group">
-                <label className="text-sm text-[var(--text-secondary)]">
+                <label style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>
                   分辨率:
-                  <select value={res} onChange={e => setRes(Number(e.target.value))} className="ml-2">
+                  <select value={res} onChange={e => setRes(Number(e.target.value))} style={{ marginLeft: '8px' }}>
                     {[8, 16, 32, 48, 64, 128, 256].map(r => (
                       <option key={r} value={r}>{r}x{r}</option>
                     ))}
@@ -427,7 +430,7 @@ export default function App() {
               </div>
             </div>
 
-            <div className="canvas-container mb-4" style={{ width: 400, height: 400 }}>
+            <div className="canvas-container" style={{ width: 400, height: 400, marginBottom: '16px' }}>
               <canvas
                 ref={pixelCanvasRef}
                 width={res}
@@ -438,7 +441,8 @@ export default function App() {
             </div>
 
             <div
-              className={`drop-zone p-8 text-center cursor-pointer ${isProcessing ? 'opacity-50' : ''}`}
+              className={`drop-zone ${isProcessing ? 'opacity-50' : ''}`}
+              style={{ padding: '32px', textAlign: 'center', cursor: 'pointer' }}
               onClick={() => fileInputRef.current?.click()}
               onDrop={handleDrop}
               onDragOver={handleDragOver}
@@ -451,31 +455,34 @@ export default function App() {
                 className="hidden"
                 onChange={handleFileSelect}
               />
-              <p className="text-[var(--text-secondary)]">
+              <p style={{ color: 'var(--text-secondary)' }}>
                 {isProcessing ? '处理中...' : '拖放图片或点击上传'}
               </p>
             </div>
 
             {frames.length > 0 && (
-              <div className="mt-4">
-                <div className="flex items-center justify-between mb-2">
+              <div style={{ marginTop: '16px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
                   <span className="section-title">帧 ({frames.length})</span>
-                  <div className="flex gap-2">
+                  <div style={{ display: 'flex', gap: '8px' }}>
                     <button
-                      className="btn btn-secondary text-sm"
+                      className="btn btn-secondary"
+                      style={{ fontSize: '12px' }}
                       onClick={() => setCurrentFrameIndex(prev => Math.max(0, prev - 1))}
                       disabled={currentFrameIndex === 0}
                     >
                       上一帧
                     </button>
                     <button
-                      className="btn btn-primary text-sm"
+                      className="btn btn-primary"
+                      style={{ fontSize: '12px' }}
                       onClick={() => isPlaying ? stopAnimation() : playAnimation()}
                     >
                       {isPlaying ? '暂停' : '播放'}
                     </button>
                     <button
-                      className="btn btn-secondary text-sm"
+                      className="btn btn-secondary"
+                      style={{ fontSize: '12px' }}
                       onClick={() => setCurrentFrameIndex(prev => Math.min(frames.length - 1, prev + 1))}
                       disabled={currentFrameIndex === frames.length - 1}
                     >
@@ -514,10 +521,9 @@ export default function App() {
                             }
                           }
                         }}
-                        className="w-16 h-16"
-                        style={{ imageRendering: 'pixelated' }}
+                        style={{ width: '64px', height: '64px', imageRendering: 'pixelated' }}
                       />
-                      <p className="text-xs text-center truncate w-16">{frame.name}</p>
+                      <p style={{ fontSize: '11px', textAlign: 'center', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', width: '64px' }}>{frame.name}</p>
                     </div>
                   ))}
                 </div>
@@ -526,20 +532,21 @@ export default function App() {
           </div>
         </div>
 
-        <div className="w-80 p-4 space-y-4 overflow-y-auto max-h-[calc(100vh-64px)]">
+        <div style={{ width: '320px', padding: '16px', display: 'flex', flexDirection: 'column', gap: '16px', overflowY: 'auto', maxHeight: 'calc(100vh - 64px)' }} className="sidebar-panel">
           <div className="card">
             <div className="card-header">
               <span className="title-text">设置</span>
             </div>
 
-            <div className="space-y-4">
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
               <div>
-                <label className="block text-sm mb-1">缩放算法</label>
+                <label style={{ display: 'block', fontSize: '12px', marginBottom: '4px' }}>缩放算法</label>
                 <select
                   value={scalingAlgorithm}
                   onChange={e => setScalingAlgorithm(e.target.value as ScalingAlgorithm)}
-                  className="w-full"
+                  style={{ width: '100%' }}
                 >
+                  <option value="nearest-neighbor">最近邻</option>
                   <option value="bilinear">双线性</option>
                   <option value="xbr-2x">xBR 2x</option>
                   <option value="xbr-3x">xBR 3x</option>
@@ -548,47 +555,47 @@ export default function App() {
               </div>
 
               <div>
-                <label className="block text-sm mb-1">颜色数量: {colors}</label>
+                <label style={{ display: 'block', fontSize: '12px', marginBottom: '4px' }}>颜色数量: {colors}</label>
                 <input
                   type="range"
                   min={2}
                   max={256}
                   value={colors}
                   onChange={e => setColors(Number(e.target.value))}
-                  className="w-full"
+                  style={{ width: '100%' }}
                 />
               </div>
 
               <div>
-                <label className="block text-sm mb-1">帧率: {fps} FPS</label>
+                <label style={{ display: 'block', fontSize: '12px', marginBottom: '4px' }}>帧率: {fps} FPS</label>
                 <input
                   type="range"
                   min={1}
                   max={60}
                   value={fps}
                   onChange={e => setFps(Number(e.target.value))}
-                  className="w-full"
+                  style={{ width: '100%' }}
                 />
               </div>
 
               <div>
-                <label className="block text-sm mb-1">精灵列数</label>
+                <label style={{ display: 'block', fontSize: '12px', marginBottom: '4px' }}>精灵列数</label>
                 <input
                   type="number"
                   min={1}
                   max={16}
                   value={spriteCols}
                   onChange={e => setSpriteCols(Number(e.target.value))}
-                  className="w-full"
+                  style={{ width: '100%' }}
                 />
               </div>
 
               <div>
-                <label className="block text-sm mb-1">循环模式</label>
+                <label style={{ display: 'block', fontSize: '12px', marginBottom: '4px' }}>循环模式</label>
                 <select
                   value={loopMode}
                   onChange={e => setLoopMode(e.target.value as LoopMode)}
-                  className="w-full"
+                  style={{ width: '100%' }}
                 >
                   <option value="none">无</option>
                   <option value="horizontal">水平循环</option>
@@ -602,26 +609,52 @@ export default function App() {
           <div className="card">
             <div className="card-header">
               <span className="title-text">调色板</span>
-              <button
-                className="btn btn-secondary text-sm"
-                onClick={() => setShowPaletteLibrary(true)}
-              >
-                调色板库
-              </button>
+              <div style={{ display: 'flex', gap: '8px' }}>
+                <button
+                  className="btn btn-secondary"
+                  style={{ fontSize: '12px' }}
+                  onClick={() => setShowPaletteLibrary(true)}
+                >
+                  调色板库
+                </button>
+                <select
+                  value={paletteExportFormat}
+                  onChange={e => setPaletteExportFormat(e.target.value as 'hex' | 'json' | 'pal')}
+                  style={{ fontSize: '12px', borderWidth: '1px', borderRadius: '4px', padding: '0 4px' }}
+                >
+                  <option value="hex">.hex</option>
+                  <option value="json">.json</option>
+                  <option value="pal">.pal</option>
+                </select>
+                <button
+                  className="btn btn-secondary"
+                  style={{ fontSize: '12px' }}
+                  onClick={() => {
+                    const palette = currentPaletteRgb.map(rgb => `#${rgb[0].toString(16).padStart(2,'0')}${rgb[1].toString(16).padStart(2,'0')}${rgb[2].toString(16).padStart(2,'0')}`);
+                    if (paletteExportFormat === 'hex') exportPaletteHex(palette, currentPaletteName);
+                    else if (paletteExportFormat === 'json') exportPaletteJson(palette, currentPaletteName);
+                    else exportPalettePal(palette, currentPaletteName);
+                  }}
+                >
+                  导出
+                </button>
+              </div>
             </div>
 
-            <div className="space-y-4">
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
               <div>
-                <label className="block text-sm mb-1">调色板模式</label>
-                <div className="flex gap-2">
+                <label style={{ display: 'block', fontSize: '12px', marginBottom: '4px' }}>调色板模式</label>
+                <div style={{ display: 'flex', gap: '8px' }}>
                   <button
-                    className={`btn ${paletteMode === 'auto' ? 'btn-primary' : 'btn-secondary'} flex-1`}
+                    className={`btn ${paletteMode === 'auto' ? 'btn-primary' : 'btn-secondary'}`}
+                    style={{ flex: 1 }}
                     onClick={() => setPaletteMode('auto')}
                   >
                     自动
                   </button>
                   <button
-                    className={`btn ${paletteMode === 'fixed' ? 'btn-primary' : 'btn-secondary'} flex-1`}
+                    className={`btn ${paletteMode === 'fixed' ? 'btn-primary' : 'btn-secondary'}`}
+                    style={{ flex: 1 }}
                     onClick={() => setPaletteMode('fixed')}
                   >
                     固定
@@ -631,11 +664,11 @@ export default function App() {
 
               {paletteMode === 'fixed' && (
                 <div>
-                  <label className="block text-sm mb-1">选择调色板</label>
+                  <label style={{ display: 'block', fontSize: '12px', marginBottom: '4px' }}>选择调色板</label>
                   <select
                     value={currentPaletteName}
                     onChange={e => setCurrentPaletteName(e.target.value)}
-                    className="w-full"
+                    style={{ width: '100%' }}
                   >
                     {Object.keys(BUILTIN_PALETTES).map(name => (
                       <option key={name} value={name}>{name}</option>
@@ -647,7 +680,7 @@ export default function App() {
                 </div>
               )}
 
-              <div className="flex flex-wrap gap-1">
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
                 {currentPaletteRgb.slice(0, colors).map((rgb, i) => (
                   <div
                     key={i}
@@ -664,7 +697,8 @@ export default function App() {
             <div className="card-header">
               <span className="title-text">动画</span>
               <button
-                className="btn btn-secondary text-sm"
+                className="btn btn-secondary"
+                style={{ fontSize: '12px' }}
                 onClick={() => setShowPresetPanel(!showPresetPanel)}
               >
                 预设
@@ -672,17 +706,18 @@ export default function App() {
             </div>
 
             {showPresetPanel && (
-              <div className="mb-4 space-y-2">
+              <div style={{ marginBottom: '8px' }}>
                 {getAnimationCategories().map(cat => (
-                  <div key={cat.id}>
-                    <p className="text-sm font-medium mb-1">{cat.icon} {cat.name}</p>
-                    <div className="flex flex-wrap gap-1">
+                  <div key={cat.id} style={{ marginBottom: '8px' }}>
+                    <p style={{ fontSize: '12px', fontWeight: 500, marginBottom: '4px' }}>{cat.icon} {cat.name}</p>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
                       {getAllTemplates()
                         .filter(t => t.category === cat.id)
                         .map(template => (
                           <button
                             key={template.id}
-                            className={`preset-card text-xs ${selectedPreset === template.id ? 'active' : ''}`}
+                            className={`preset-card ${selectedPreset === template.id ? 'active' : ''}`}
+                            style={{ fontSize: '11px' }}
                             onClick={() => setSelectedPreset(template.id)}
                           >
                             {template.name}
@@ -694,21 +729,24 @@ export default function App() {
               </div>
             )}
 
-            <div className="space-y-2">
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
               <button
-                className="btn btn-secondary w-full"
+                className="btn btn-secondary"
+                style={{ width: '100%' }}
                 onClick={() => setShowGifPanel(true)}
               >
                 导入 GIF
               </button>
               <button
-                className="btn btn-secondary w-full"
+                className="btn btn-secondary"
+                style={{ width: '100%' }}
                 onClick={() => setShowStateMachine(!showStateMachine)}
               >
                 状态机
               </button>
               <button
-                className="btn btn-secondary w-full"
+                className="btn btn-secondary"
+                style={{ width: '100%' }}
                 onClick={() => setShowAnimGroups(!showAnimGroups)}
               >
                 动画组
@@ -722,13 +760,13 @@ export default function App() {
                 <span className="title-text">动画组</span>
               </div>
 
-              <div className="mb-3">
-                <div className="flex flex-wrap gap-2">
+              <div style={{ marginBottom: '12px' }}>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
                   {animGroups.map(group => (
                     <button
                       key={group.id}
-                      className={`btn text-sm ${selectedAnimGroup === group.id ? 'btn-primary' : 'btn-secondary'}`}
-                      style={selectedAnimGroup === group.id ? { borderColor: group.color, background: group.color } : {}}
+                      className={`btn ${selectedAnimGroup === group.id ? 'btn-primary' : 'btn-secondary'}`}
+                      style={selectedAnimGroup === group.id ? { borderColor: group.color, background: group.color, fontSize: '12px' } : { fontSize: '12px' }}
                       onClick={() => setSelectedAnimGroup(selectedAnimGroup === group.id ? null : group.id)}
                     >
                       {group.icon} {group.nameCn}
@@ -738,19 +776,19 @@ export default function App() {
               </div>
 
               {selectedAnimGroup && (
-                <div className="mb-3">
-                  <p className="text-sm mb-2">帧列表</p>
-                  <div className="flex flex-wrap gap-1 max-h-32 overflow-y-auto">
+                <div style={{ marginBottom: '12px' }}>
+                  <p style={{ fontSize: '12px', marginBottom: '8px' }}>帧列表</p>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px', maxHeight: '128px', overflowY: 'auto' }}>
                     {frames
                       .filter(f => animGroups.find(g => g.id === selectedAnimGroup)?.frameIds.includes(f.id))
                       .map(frame => (
                         <div
                           key={frame.id}
-                          className="flex items-center gap-1 bg-[var(--bg-main)] p-1 rounded"
+                          style={{ display: 'flex', alignItems: 'center', gap: '4px', background: 'var(--bg-main)', padding: '4px', borderRadius: '4px' }}
                         >
-                          <span className="text-xs">{frame.name}</span>
+                          <span style={{ fontSize: '11px' }}>{frame.name}</span>
                           <button
-                            className="text-xs text-red-500"
+                            style={{ fontSize: '11px', color: '#ef4444' }}
                             onClick={() => {
                               setAnimGroups(prev => prev.map(g =>
                                 g.id === selectedAnimGroup
@@ -764,21 +802,22 @@ export default function App() {
                         </div>
                       ))}
                   </div>
-                  <p className="text-xs text-[var(--text-muted)] mt-2">
+                  <p style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '8px' }}>
                     点击下方帧列表中的帧可添加到组
                   </p>
                 </div>
               )}
 
-              <div className="flex gap-2">
+              <div style={{ display: 'flex', gap: '8px' }}>
                 <input
                   type="text"
                   id="new-group-name"
                   placeholder="新组名称"
-                  className="flex-1 text-sm"
+                  style={{ flex: 1, fontSize: '12px' }}
                 />
                 <button
-                  className="btn btn-primary text-sm"
+                  className="btn btn-primary"
+                  style={{ fontSize: '12px' }}
                   onClick={() => {
                     const input = document.getElementById('new-group-name') as HTMLInputElement;
                     if (input.value) {
@@ -818,7 +857,7 @@ export default function App() {
                       });
                     }
                   }}
-                  className="text-sm"
+                  style={{ fontSize: '12px' }}
                 >
                   {getStateMachinePresets().map(p => (
                     <option key={p.id} value={p.id}>{p.name}</option>
@@ -826,13 +865,14 @@ export default function App() {
                 </select>
               </div>
 
-              <div className="mb-3">
-                <p className="text-sm mb-2">当前状态: <span className="font-bold text-accent">{currentAnimState}</span></p>
-                <div className="flex flex-wrap gap-2">
+              <div style={{ marginBottom: '12px' }}>
+                <p style={{ fontSize: '12px', marginBottom: '8px' }}>当前状态: <span style={{ fontWeight: 700, color: 'var(--accent)' }}>{currentAnimState}</span></p>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
                   {Array.from(new Set(animStateMachine.transitions.map(t => t.from))).map(state => (
                     <button
                       key={state}
-                      className={`btn text-sm ${currentAnimState === state ? 'btn-primary' : 'btn-secondary'}`}
+                      className={`btn ${currentAnimState === state ? 'btn-primary' : 'btn-secondary'}`}
+                      style={{ fontSize: '12px' }}
                       onClick={() => setCurrentAnimState(state)}
                     >
                       {state}
@@ -841,16 +881,17 @@ export default function App() {
                 </div>
               </div>
 
-              <div className="mb-3">
-                <p className="text-sm font-medium mb-2">可用转换</p>
-                <div className="space-y-1 max-h-40 overflow-y-auto">
+              <div style={{ marginBottom: '12px' }}>
+                <p style={{ fontSize: '12px', fontWeight: 500, marginBottom: '8px' }}>可用转换</p>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', maxHeight: '160px', overflowY: 'auto' }}>
                   {animStateMachine.transitions
                     .filter(t => t.from === currentAnimState)
                     .map((t, i) => (
-                      <div key={i} className="flex items-center justify-between text-sm bg-[var(--bg-main)] p-2 rounded">
+                      <div key={i} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: '12px', background: 'var(--bg-main)', padding: '8px', borderRadius: '4px' }}>
                         <span>{currentAnimState} → {t.to} (事件: {t.event})</span>
                         <button
-                          className="btn btn-danger text-xs py-1 px-2"
+                          className="btn btn-danger"
+                          style={{ fontSize: '11px', padding: '4px 8px' }}
                           onClick={() => {
                             setAnimStateMachine(prev => ({
                               ...prev,
@@ -865,15 +906,15 @@ export default function App() {
                       </div>
                     ))}
                   {animStateMachine.transitions.filter(t => t.from === currentAnimState).length === 0 && (
-                    <p className="text-sm text-[var(--text-muted)]">无可用转换</p>
+                    <p style={{ fontSize: '12px', color: 'var(--text-muted)' }}>无可用转换</p>
                   )}
                 </div>
               </div>
 
-              <div className="flex gap-2">
+              <div style={{ display: 'flex', gap: '8px' }}>
                 <select
                   id="sm-to-state"
-                  className="flex-1 text-sm"
+                  style={{ flex: 1, fontSize: '12px' }}
                 >
                   <option value="">选择目标状态...</option>
                   {Array.from(new Set(animStateMachine.transitions.map(t => t.to))).map(state => (
@@ -884,10 +925,11 @@ export default function App() {
                   type="text"
                   id="sm-event"
                   placeholder="事件名"
-                  className="flex-1 text-sm"
+                  style={{ flex: 1, fontSize: '12px' }}
                 />
                 <button
-                  className="btn btn-primary text-sm"
+                  className="btn btn-primary"
+                  style={{ fontSize: '12px' }}
                   onClick={() => {
                     const toSelect = document.getElementById('sm-to-state') as HTMLSelectElement;
                     const eventInput = document.getElementById('sm-event') as HTMLInputElement;
@@ -913,45 +955,45 @@ export default function App() {
             <div className="card">
               <div className="card-header">
                 <span className="title-text">洋葱皮</span>
-                <label className="flex items-center gap-2">
+                <label style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                   <input
                     type="checkbox"
                     checked={onionSkin}
                     onChange={e => setOnionSkin(e.target.checked)}
                   />
-                  <span className="text-sm">启用</span>
+                  <span style={{ fontSize: '12px' }}>启用</span>
                 </label>
               </div>
 
               {onionSkin && (
-                <div className="space-y-3">
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
                   <div>
-                    <label className="block text-sm mb-1">透明度: {onionOpacity}%</label>
+                    <label style={{ display: 'block', fontSize: '12px', marginBottom: '4px' }}>透明度: {onionOpacity}%</label>
                     <input
                       type="range"
                       min={10}
                       max={80}
                       value={onionOpacity}
                       onChange={e => setOnionOpacity(Number(e.target.value))}
-                      className="w-full"
+                      style={{ width: '100%' }}
                     />
                   </div>
-                  <div className="flex gap-4">
-                    <label className="flex items-center gap-1">
+                  <div style={{ display: 'flex', gap: '16px' }}>
+                    <label style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
                       <input
                         type="checkbox"
                         checked={onionPrev}
                         onChange={e => setOnionPrev(e.target.checked)}
                       />
-                      <span className="text-sm">前帧</span>
+                      <span style={{ fontSize: '12px' }}>前帧</span>
                     </label>
-                    <label className="flex items-center gap-1">
+                    <label style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
                       <input
                         type="checkbox"
                         checked={onionNext}
                         onChange={e => setOnionNext(e.target.checked)}
                       />
-                      <span className="text-sm">后帧</span>
+                      <span style={{ fontSize: '12px' }}>后帧</span>
                     </label>
                   </div>
                 </div>
@@ -964,56 +1006,57 @@ export default function App() {
       {showExportModal && (
         <div className="modal-overlay" onClick={() => setShowExportModal(false)}>
           <div className="modal-content" onClick={e => e.stopPropagation()}>
-            <h2 className="text-lg font-semibold mb-4">导出</h2>
+            <h2 style={{ fontSize: '18px', fontWeight: 600, marginBottom: '16px' }}>导出</h2>
 
             {isExporting && (
-              <div className="mb-4">
+              <div style={{ marginBottom: '16px' }}>
                 <div className="progress-bar">
                   <div className="progress-fill" style={{ width: `${exportProgress}%` }} />
                 </div>
-                <p className="text-sm text-center mt-2">导出中... {Math.round(exportProgress)}%</p>
+                <p style={{ fontSize: '12px', textAlign: 'center', marginTop: '8px' }}>导出中... {Math.round(exportProgress)}%</p>
               </div>
             )}
 
-            <div className="space-y-2">
-              <button className="btn btn-primary w-full" onClick={handleExportSpritesheet}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+              <button className="btn btn-primary" style={{ width: '100%' }} onClick={handleExportSpritesheet}>
                 导出为 PNG 精灵图
               </button>
-              <button className="btn btn-primary w-full" onClick={handleExportGif}>
+              <button className="btn btn-primary" style={{ width: '100%' }} onClick={handleExportGif}>
                 导出为 GIF 动画
               </button>
-              <button className="btn btn-secondary w-full" onClick={handleExportZip}>
+              <button className="btn btn-secondary" style={{ width: '100%' }} onClick={handleExportZip}>
                 导出为 ZIP (PNG序列)
               </button>
               {versionConf.asepriteExport && (
-                <button className="btn btn-secondary w-full" onClick={handleExportAseprite}>
+                <button className="btn btn-secondary" style={{ width: '100%' }} onClick={handleExportAseprite}>
                   导出为 Aseprite JSON
                 </button>
               )}
-              <button className="btn btn-secondary w-full" onClick={handleExportTexturePacker}>
+              <button className="btn btn-secondary" style={{ width: '100%' }} onClick={handleExportTexturePacker}>
                 导出为 TexturePacker (.tps)
               </button>
               <button
-                className="btn btn-primary w-full"
+                className="btn btn-primary"
+                style={{ width: '100%', background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)' }}
                 onClick={openInPixelPV}
-                style={{ background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)' }}
               >
                 制作游戏PV
               </button>
             </div>
 
-            <div className="mt-4 pt-4 border-t border-[var(--border)]">
-              <label className="block text-sm mb-1">Aseprite 图层名</label>
+            <div style={{ marginTop: '16px', paddingTop: '16px', borderTop: '1px solid var(--border)' }}>
+              <label style={{ display: 'block', fontSize: '12px', marginBottom: '4px' }}>Aseprite 图层名</label>
               <input
                 type="text"
                 value={asepriteLayerName}
                 onChange={e => setAsepriteLayerName(e.target.value)}
-                className="w-full"
+                style={{ width: '100%' }}
               />
             </div>
 
             <button
-              className="btn btn-secondary w-full mt-4"
+              className="btn btn-secondary"
+              style={{ width: '100%', marginTop: '16px' }}
               onClick={() => setShowExportModal(false)}
             >
               关闭
@@ -1025,19 +1068,19 @@ export default function App() {
       {showPaletteLibrary && (
         <div className="modal-overlay" onClick={() => setShowPaletteLibrary(false)}>
           <div className="modal-content" onClick={e => e.stopPropagation()}>
-            <h2 className="text-lg font-semibold mb-4">调色板库</h2>
+            <h2 style={{ fontSize: '18px', fontWeight: 600, marginBottom: '16px' }}>调色板库</h2>
 
-            <div className="flex gap-2 mb-4">
+            <div style={{ display: 'flex', gap: '8px', marginBottom: '16px' }}>
               <input
                 type="text"
                 placeholder="搜索调色板..."
                 value={paletteSearchQuery}
                 onChange={e => setPaletteSearchQuery(e.target.value)}
-                className="flex-1"
+                style={{ flex: 1 }}
               />
             </div>
 
-            <div className="flex gap-2 mb-4">
+            <div style={{ display: 'flex', gap: '8px', marginBottom: '16px' }}>
               <button
                 className={`tab-btn ${paletteTab === 'builtin' ? 'active' : ''}`}
                 onClick={() => setPaletteTab('builtin')}
@@ -1052,9 +1095,9 @@ export default function App() {
               </button>
             </div>
 
-            <div className="max-h-96 overflow-y-auto">
+            <div style={{ maxHeight: '384px', overflowY: 'auto' }}>
               {paletteTab === 'builtin' && (
-                <div className="space-y-4">
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
                   {filteredPalettes.slice(0, 20).map(palette => (
                     <div
                       key={palette.id}
@@ -1064,14 +1107,13 @@ export default function App() {
                         setShowPaletteLibrary(false);
                       }}
                     >
-                      <p className="font-medium">{palette.name}</p>
-                      <p className="text-xs text-[var(--text-muted)]">{palette.description}</p>
-                      <div className="flex gap-1 mt-1">
+                      <p style={{ fontWeight: 500 }}>{palette.name}</p>
+                      <p style={{ fontSize: '11px', color: 'var(--text-muted)' }}>{palette.description}</p>
+                      <div style={{ display: 'flex', gap: '4px', marginTop: '4px' }}>
                         {palette.colors.slice(0, 8).map((color, i) => (
                           <div
                             key={i}
-                            className="w-4 h-4 rounded"
-                            style={{ backgroundColor: color }}
+                            style={{ width: '16px', height: '16px', borderRadius: '4px', backgroundColor: color }}
                           />
                         ))}
                       </div>
@@ -1081,7 +1123,7 @@ export default function App() {
               )}
 
               {paletteTab === 'custom' && (
-                <div className="space-y-2">
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                   {Object.keys(customPalettes).map(name => (
                     <div
                       key={name}
@@ -1091,13 +1133,12 @@ export default function App() {
                         setShowPaletteLibrary(false);
                       }}
                     >
-                      <p className="font-medium">{name}</p>
-                      <div className="flex gap-1 mt-1">
+                      <p style={{ fontWeight: 500 }}>{name}</p>
+                      <div style={{ display: 'flex', gap: '4px', marginTop: '4px' }}>
                         {customPalettes[name].slice(0, 8).map((color, i) => (
                           <div
                             key={i}
-                            className="w-4 h-4 rounded"
-                            style={{ backgroundColor: color }}
+                            style={{ width: '16px', height: '16px', borderRadius: '4px', backgroundColor: color }}
                           />
                         ))}
                       </div>
@@ -1108,7 +1149,8 @@ export default function App() {
             </div>
 
             <button
-              className="btn btn-secondary w-full mt-4"
+              className="btn btn-secondary"
+              style={{ width: '100%', marginTop: '16px' }}
               onClick={() => setShowPaletteLibrary(false)}
             >
               关闭
@@ -1120,9 +1162,9 @@ export default function App() {
       {showVersionModal && (
         <div className="modal-overlay" onClick={() => setShowVersionModal(false)}>
           <div className="modal-content" onClick={e => e.stopPropagation()}>
-            <h2 className="text-lg font-semibold mb-4">版本信息</h2>
+            <h2 style={{ fontSize: '18px', fontWeight: 600, marginBottom: '16px' }}>版本信息</h2>
 
-            <div className="space-y-2">
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
               {Object.entries(VERSION_CONFIG).map(([ver, conf]) => (
                 <div
                   key={ver}
@@ -1133,8 +1175,8 @@ export default function App() {
                     setShowVersionModal(false);
                   }}
                 >
-                  <p className="font-medium capitalize">{ver}</p>
-                  <p className="text-xs text-[var(--text-muted)]">
+                  <p style={{ fontWeight: 500, textTransform: 'capitalize' }}>{ver}</p>
+                  <p style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
                     分辨率: {conf.maxResolution === Infinity ? '无限' : `最大 ${conf.maxResolution}`} |
                     帧数: {conf.maxFrames === Infinity ? '无限' : `最大 ${conf.maxFrames}`}
                   </p>
@@ -1143,7 +1185,8 @@ export default function App() {
             </div>
 
             <button
-              className="btn btn-secondary w-full mt-4"
+              className="btn btn-secondary"
+              style={{ width: '100%', marginTop: '16px' }}
               onClick={() => setShowVersionModal(false)}
             >
               关闭
@@ -1155,47 +1198,49 @@ export default function App() {
       {showProjectModal && (
         <div className="modal-overlay" onClick={() => setShowProjectModal(false)}>
           <div className="modal-content" onClick={e => e.stopPropagation()}>
-            <h2 className="text-lg font-semibold mb-4">项目设置</h2>
+            <h2 style={{ fontSize: '18px', fontWeight: 600, marginBottom: '16px' }}>项目设置</h2>
 
-            <div className="space-y-4">
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
               <div>
-                <label className="block text-sm mb-1">项目名称</label>
+                <label style={{ display: 'block', fontSize: '12px', marginBottom: '4px' }}>项目名称</label>
                 <input
                   type="text"
                   value={projectMeta.name}
                   onChange={e => setProjectMeta(prev => ({ ...prev, name: e.target.value }))}
-                  className="w-full"
+                  style={{ width: '100%' }}
                 />
               </div>
               <div>
-                <label className="block text-sm mb-1">作者</label>
+                <label style={{ display: 'block', fontSize: '12px', marginBottom: '4px' }}>作者</label>
                 <input
                   type="text"
                   value={projectMeta.author}
                   onChange={e => setProjectMeta(prev => ({ ...prev, author: e.target.value }))}
-                  className="w-full"
+                  style={{ width: '100%' }}
                 />
               </div>
               <div>
-                <label className="block text-sm mb-1">描述</label>
+                <label style={{ display: 'block', fontSize: '12px', marginBottom: '4px' }}>描述</label>
                 <textarea
                   value={projectMeta.description}
                   onChange={e => setProjectMeta(prev => ({ ...prev, description: e.target.value }))}
-                  className="w-full"
+                  style={{ width: '100%' }}
                   rows={3}
                 />
               </div>
             </div>
 
-            <div className="flex gap-2 mt-4">
+            <div style={{ display: 'flex', gap: '8px', marginTop: '16px' }}>
               <button
-                className="btn btn-secondary flex-1"
+                className="btn btn-secondary"
+                style={{ flex: 1 }}
                 onClick={() => setShowProjectModal(false)}
               >
                 取消
               </button>
               <button
-                className="btn btn-primary flex-1"
+                className="btn btn-primary"
+                style={{ flex: 1 }}
                 onClick={() => setShowProjectModal(false)}
               >
                 保存
@@ -1208,7 +1253,7 @@ export default function App() {
       {showGifPanel && (
         <div className="modal-overlay" onClick={() => setShowGifPanel(false)}>
           <div className="modal-content" onClick={e => e.stopPropagation()}>
-            <h2 className="text-lg font-semibold mb-4">导入 GIF</h2>
+            <h2 style={{ fontSize: '18px', fontWeight: 600, marginBottom: '16px' }}>导入 GIF</h2>
 
             <div
               className="gif-drop-zone"
@@ -1222,6 +1267,21 @@ export default function App() {
                 onChange={async e => {
                   const file = e.target.files?.[0];
                   if (!file) return;
+
+                  try {
+                    const gifFrames = await loadGIFFrames(file);
+                    for (const { img, delay } of gifFrames) {
+                      const frame: Frame = {
+                        id: `frame_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+                        imgEl: img,
+                        name: `frame_${frames.length + 1}`,
+                        duration: delay,
+                      };
+                      addFrame(frame);
+                    }
+                  } catch (err) {
+                    console.error('Failed to import GIF:', err);
+                  }
                   setShowGifPanel(false);
                 }}
               />
@@ -1229,7 +1289,8 @@ export default function App() {
             </div>
 
             <button
-              className="btn btn-secondary w-full mt-4"
+              className="btn btn-secondary"
+              style={{ width: '100%', marginTop: '16px' }}
               onClick={() => setShowGifPanel(false)}
             >
               关闭
