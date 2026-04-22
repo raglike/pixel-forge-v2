@@ -6,6 +6,7 @@ import { BUILTIN_PALETTES, getAllPalettes, getCategories } from '@/data/palettes
 import { getAllTemplates, getAnimationCategories, getStateMachinePresets } from '@/data/templates';
 import { loadGIFFrames } from '@/utils/gifParser';
 import { exportPaletteHex, exportPaletteJson, exportPalettePal } from '@/utils/export';
+import { medianCut, hexPaletteToRgb } from '@/utils/pixelate';
 import type { Frame, VersionConfig, ScalingAlgorithm, ProjectMeta, StateMachine, AnimGroup, LoopMode } from '@/types';
 
 const VERSION_CONFIG: Record<string, VersionConfig> = {
@@ -73,6 +74,13 @@ export default function App() {
   const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
   const [spriteCols, setSpriteCols] = useState(4);
 
+  // Image Split / Grid Cut
+  const [showSplitImageModal, setShowSplitImageModal] = useState(false);
+  const [splitCols, setSplitCols] = useState(2);
+  const [splitRows, setSplitRows] = useState(2);
+  const [splitUniform, setSplitUniform] = useState(true);
+  const splitPreviewRef = useRef<HTMLCanvasElement>(null);
+
   // Loop Mode - Infinite Canvas
   const [loopMode, setLoopMode] = useState<LoopMode>('none');
 
@@ -134,7 +142,7 @@ export default function App() {
     exportTexturePacker,
   } = useExport();
 
-  const { processFile, isProcessing } = useImageProcessor(
+  const { processFile, processImageElement, isProcessing } = useImageProcessor(
     { resolution: res, colorCount: colors, paletteName: currentPaletteName, scalingAlgorithm },
     setFrames
   );
@@ -154,6 +162,8 @@ export default function App() {
   const [_asepriteFrameTags, _setAsepriteFrameTags] = useState('');
   const [showGifPanel, setShowGifPanel] = useState(false);
   const [paletteExportFormat, setPaletteExportFormat] = useState<'hex' | 'json' | 'pal'>('hex');
+  const [showResTooltip, setShowResTooltip] = useState(false);
+  const [showColorsTooltip, setShowColorsTooltip] = useState(false);
 
   const filteredPalettes = paletteSearchQuery
     ? getAllPalettes().filter(
@@ -213,6 +223,85 @@ export default function App() {
   useEffect(() => {
     drawCurrentFrame();
   }, [drawCurrentFrame]);
+
+  // Real-time preview: re-process image when parameters change
+  useEffect(() => {
+    if (!currentFrame?.imgEl?.complete) return;
+
+    let paletteRgb: [number, number, number][];
+    if (paletteMode === 'auto') {
+      const tempCanvas = document.createElement('canvas');
+      tempCanvas.width = currentFrame.imgEl.naturalWidth;
+      tempCanvas.height = currentFrame.imgEl.naturalHeight;
+      const ctx = tempCanvas.getContext('2d')!;
+      ctx.drawImage(currentFrame.imgEl, 0, 0);
+      const imageData = ctx.getImageData(0, 0, tempCanvas.width, tempCanvas.height);
+      paletteRgb = medianCut(imageData, colors);
+    } else {
+      const hexPalette = BUILTIN_PALETTES[currentPaletteName] || BUILTIN_PALETTES['PICO-8'];
+      paletteRgb = hexPaletteToRgb(hexPalette);
+    }
+
+    const processed = processImageElement(currentFrame.imgEl, paletteRgb);
+    const displayCanvas = pixelCanvasRef.current;
+    if (displayCanvas) {
+      const dCtx = displayCanvas.getContext('2d')!;
+      dCtx.imageSmoothingEnabled = false;
+      dCtx.clearRect(0, 0, displayCanvas.width, displayCanvas.height);
+      dCtx.drawImage(processed, 0, 0, displayCanvas.width, displayCanvas.height);
+    }
+  }, [res, colors, scalingAlgorithm, currentFrame, paletteMode, currentPaletteName, processImageElement]);
+
+  // F35: Draw split preview with grid overlay
+  useEffect(() => {
+    if (!showSplitImageModal || !currentFrame?.imgEl) return;
+    const canvas = splitPreviewRef.current;
+    if (!canvas) return;
+
+    const imgEl = currentFrame.imgEl;
+
+    function drawSplitPreview() {
+      if (!canvas || !imgEl.complete || imgEl.naturalWidth === 0) return;
+      const maxW = 400, maxH = 150;
+      let w = imgEl.width, h = imgEl.height;
+      const scale = Math.min(maxW / w, maxH / h, 1);
+      w = Math.round(w * scale);
+      h = Math.round(h * scale);
+
+      canvas.width = w;
+      canvas.height = h;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) return;
+      ctx.imageSmoothingEnabled = false;
+      ctx.drawImage(imgEl, 0, 0, w, h);
+
+      ctx.strokeStyle = 'rgba(0, 255, 136, 0.8)';
+      ctx.lineWidth = 2;
+
+      const cellW = w / splitCols;
+      const cellH = h / splitRows;
+
+      for (let col = 1; col < splitCols; col++) {
+        ctx.beginPath();
+        ctx.moveTo(col * cellW, 0);
+        ctx.lineTo(col * cellW, h);
+        ctx.stroke();
+      }
+
+      for (let row = 1; row < splitRows; row++) {
+        ctx.beginPath();
+        ctx.moveTo(0, row * cellH);
+        ctx.lineTo(w, row * cellH);
+        ctx.stroke();
+      }
+    }
+
+    if (!imgEl.complete || imgEl.naturalWidth === 0) {
+      imgEl.onload = drawSplitPreview;
+    } else {
+      drawSplitPreview();
+    }
+  }, [showSplitImageModal, currentFrame, splitCols, splitRows]);
 
   const playAnimation = useCallback(() => {
     if (frames.length === 0) return;
@@ -419,13 +508,25 @@ export default function App() {
             <div className="card-header">
               <span className="title-text">画布</span>
               <div className="toolbar-group">
-                <label style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>
+                <label style={{ fontSize: '12px', color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: '4px' }}>
                   分辨率:
                   <select value={res} onChange={e => setRes(Number(e.target.value))} style={{ marginLeft: '8px' }}>
                     {[8, 16, 32, 48, 64, 128, 256].map(r => (
                       <option key={r} value={r}>{r}x{r}</option>
                     ))}
                   </select>
+                  <span
+                    style={{ cursor: 'pointer', position: 'relative' }}
+                    onMouseEnter={() => setShowResTooltip(true)}
+                    onMouseLeave={() => setShowResTooltip(false)}
+                  >
+                    <span style={{ color: 'var(--accent)', fontWeight: 600 }}>?</span>
+                    {showResTooltip && (
+                      <div style={{ position: 'absolute', top: '20px', right: 0, background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: '6px', padding: '8px 12px', fontSize: '11px', color: 'var(--text-secondary)', whiteSpace: 'nowrap', zIndex: 100, boxShadow: 'var(--shadow-md)' }}>
+                        游戏sprite建议16-64像素
+                      </div>
+                    )}
+                  </span>
                 </label>
               </div>
             </div>
@@ -439,25 +540,50 @@ export default function App() {
               />
             </div>
 
-            <div
-              className={`drop-zone ${isProcessing ? 'opacity-50' : ''}`}
-              style={{ padding: '32px', textAlign: 'center', cursor: 'pointer' }}
-              onClick={() => fileInputRef.current?.click()}
-              onDrop={handleDrop}
-              onDragOver={handleDragOver}
-            >
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept="image/*"
-                multiple
-                style={{ display: 'none' }}
-                onChange={handleFileSelect}
-              />
-              <p style={{ color: 'var(--text-secondary)' }}>
-                {isProcessing ? '处理中...' : '拖放图片或点击上传'}
-              </p>
-            </div>
+            {frames.length === 0 ? (
+              <div style={{ padding: '48px 32px', textAlign: 'center' }}>
+                <div style={{ marginBottom: '24px' }}>
+                  <h2 style={{ fontSize: '24px', fontWeight: 700, color: 'var(--text-primary)', marginBottom: '8px' }}>🎨 PixelForge</h2>
+                  <p style={{ fontSize: '14px', color: 'var(--text-secondary)', marginBottom: '24px' }}>将图片转换为精美像素艺术</p>
+                  <button
+                    className="btn btn-primary"
+                    style={{ fontSize: '16px', padding: '12px 32px', marginBottom: '16px' }}
+                    onClick={() => fileInputRef.current?.click()}
+                  >
+                    上传图片
+                  </button>
+                  <p style={{ fontSize: '12px', color: 'var(--text-muted)' }}>支持 PNG、JPG、GIF</p>
+                </div>
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept="image/*"
+                  multiple
+                  style={{ display: 'none' }}
+                  onChange={handleFileSelect}
+                />
+              </div>
+            ) : (
+              <div
+                className={`drop-zone ${isProcessing ? 'opacity-50' : ''}`}
+                style={{ padding: '16px', textAlign: 'center', cursor: 'pointer' }}
+                onClick={() => fileInputRef.current?.click()}
+                onDrop={handleDrop}
+                onDragOver={handleDragOver}
+              >
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept="image/*"
+                  multiple
+                  style={{ display: 'none' }}
+                  onChange={handleFileSelect}
+                />
+                <p style={{ color: 'var(--text-secondary)', fontSize: '12px' }}>
+                  {isProcessing ? '处理中...' : '拖放更多图片或点击上传'}
+                </p>
+              </div>
+            )}
 
             {frames.length > 0 && (
               <div style={{ marginTop: '16px' }}>
@@ -554,7 +680,21 @@ export default function App() {
               </div>
 
               <div>
-                <label style={{ display: 'block', fontSize: '12px', marginBottom: '4px' }}>颜色数量: {colors}</label>
+                <label style={{ display: 'flex', alignItems: 'center', fontSize: '12px', marginBottom: '4px', gap: '4px' }}>
+                  颜色数量: {colors}
+                  <span
+                    style={{ cursor: 'pointer', position: 'relative' }}
+                    onMouseEnter={() => setShowColorsTooltip(true)}
+                    onMouseLeave={() => setShowColorsTooltip(false)}
+                  >
+                    <span style={{ color: 'var(--accent)', fontWeight: 600 }}>?</span>
+                    {showColorsTooltip && (
+                      <div style={{ position: 'absolute', top: '16px', left: 0, background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: '6px', padding: '8px 12px', fontSize: '11px', color: 'var(--text-secondary)', whiteSpace: 'nowrap', zIndex: 100, boxShadow: 'var(--shadow-md)' }}>
+                        PICO-8使用16色，NES使用54色
+                      </div>
+                    )}
+                  </span>
+                </label>
                 <input
                   type="range"
                   min={2}
@@ -704,6 +844,16 @@ export default function App() {
               </button>
             </div>
 
+            <div style={{ marginBottom: '12px' }}>
+              <button
+                className="btn btn-primary"
+                style={{ width: '100%', justifyContent: 'center' }}
+                onClick={() => setShowGifPanel(true)}
+              >
+                🎬 导入 GIF
+              </button>
+            </div>
+
             {showPresetPanel && (
               <div style={{ marginBottom: '8px' }}>
                 {getAnimationCategories().map(cat => (
@@ -732,13 +882,6 @@ export default function App() {
               <button
                 className="btn btn-secondary"
                 style={{ width: '100%' }}
-                onClick={() => setShowGifPanel(true)}
-              >
-                导入 GIF
-              </button>
-              <button
-                className="btn btn-secondary"
-                style={{ width: '100%' }}
                 onClick={() => setShowStateMachine(!showStateMachine)}
               >
                 状态机
@@ -750,6 +893,16 @@ export default function App() {
               >
                 动画组
               </button>
+              {versionConf.threePreview && (
+                <button
+                  className="btn btn-secondary"
+                  style={{ width: '100%', background: 'var(--accent)', borderColor: 'var(--accent)' }}
+                  onClick={() => { setShowSplitImageModal(true); }}
+                  disabled={frames.length === 0}
+                >
+                  🪓 图片拆分
+                </button>
+              )}
             </div>
           </div>
 
@@ -1297,6 +1450,174 @@ export default function App() {
           </div>
         </div>
       )}
+
+      {showSplitImageModal && (
+        <div className="modal-overlay" onClick={() => setShowSplitImageModal(false)}>
+          <div className="modal-content" style={{ maxWidth: '600px' }} onClick={e => e.stopPropagation()}>
+            <h3 style={{ fontSize: '18px', fontWeight: 600, marginBottom: '16px', color: 'var(--accent)' }}>🪓 图片拆分</h3>
+            <p style={{ fontSize: '13px', marginBottom: '12px', color: 'var(--text-secondary)' }}>将大图按网格拆分为多个帧，适合 spritesheet 拆分</p>
+
+            <div style={{ marginBottom: '16px' }}>
+              <label style={{ fontSize: '12px', display: 'block', marginBottom: '8px', color: 'var(--text-secondary)' }}>当前帧预览</label>
+              <div style={{ minHeight: '120px', background: '#0d0d1a', position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                {currentFrame?.imgEl ? (
+                  <canvas
+                    ref={splitPreviewRef}
+                    style={{ maxWidth: '100%', maxHeight: '150px', imageRendering: 'pixelated' }}
+                  />
+                ) : (
+                  <span style={{ color: 'var(--text-muted)', fontSize: '12px' }}>请先加载图片</span>
+                )}
+              </div>
+            </div>
+
+            <div style={{ marginBottom: '16px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '12px' }}>
+                <input
+                  type="checkbox"
+                  id="splitUniform"
+                  checked={splitUniform}
+                  onChange={e => {
+                    setSplitUniform(e.target.checked);
+                    if (e.target.checked) setSplitRows(splitCols);
+                  }}
+                />
+                <label htmlFor="splitUniform" style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>均匀分割（行列数相同）</label>
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                <div>
+                  <label style={{ fontSize: '12px', display: 'block', marginBottom: '4px', color: 'var(--text-secondary)' }}>列数</label>
+                  <input
+                    type="number"
+                    min={1}
+                    max={16}
+                    value={splitCols}
+                    onChange={e => {
+                      const val = Math.max(1, Math.min(16, Number(e.target.value)));
+                      setSplitCols(val);
+                      if (splitUniform) setSplitRows(val);
+                    }}
+                    style={{ width: '100%' }}
+                  />
+                </div>
+                <div>
+                  <label style={{ fontSize: '12px', display: 'block', marginBottom: '4px', color: 'var(--text-secondary)' }}>行数</label>
+                  <input
+                    type="number"
+                    min={1}
+                    max={16}
+                    value={splitRows}
+                    onChange={e => {
+                      const val = Math.max(1, Math.min(16, Number(e.target.value)));
+                      setSplitRows(val);
+                      if (splitUniform) setSplitCols(val);
+                    }}
+                    disabled={splitUniform}
+                    style={{ width: '100%' }}
+                  />
+                </div>
+              </div>
+            </div>
+
+            <div style={{ fontSize: '12px', marginBottom: '16px', color: 'var(--text-muted)' }}>
+              拆分结果: {splitCols * splitRows} 帧 ({splitCols}×{splitRows})
+            </div>
+
+            <div style={{ display: 'flex', gap: '12px' }}>
+              <button
+                className="btn btn-primary"
+                style={{ flex: 1, justifyContent: 'center', background: 'var(--accent)', borderColor: 'var(--accent)' }}
+                onClick={async () => {
+                  if (!currentFrame?.imgEl) return;
+
+                  const imgEl = currentFrame.imgEl;
+                  const splitResults = splitImageGrid(imgEl, splitCols, splitRows);
+
+                  if (splitResults.length === 0) {
+                    alert('拆分失败，请确保图片已加载');
+                    return;
+                  }
+
+                  const newFrames = await splitResultsToFrames(splitResults, currentFrame.name || 'frame', currentFrame.duration || 100);
+
+                  if (newFrames.length > versionConf.maxFrames) {
+                    alert(`拆分后有${newFrames.length}帧，超出${versionConf.maxFrames}帧限制`);
+                    return;
+                  }
+
+                  setFrames(newFrames);
+                  setCurrentFrameIndex(0);
+                  setShowSplitImageModal(false);
+                }}
+                disabled={!currentFrame?.imgEl}
+              >
+                🪓 拆分
+              </button>
+              <button
+                className="btn btn-secondary"
+                style={{ flex: 1, justifyContent: 'center' }}
+                onClick={() => setShowSplitImageModal(false)}
+              >
+                关闭
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
+}
+
+// F35: Image Split / Grid Cut helper functions
+function splitImageGrid(imgEl: HTMLImageElement, splitCols: number, splitRows: number): HTMLCanvasElement[] {
+  if (!imgEl || !imgEl.complete || imgEl.naturalWidth === 0) {
+    return [];
+  }
+
+  const results: HTMLCanvasElement[] = [];
+  const cellW = Math.floor(imgEl.naturalWidth / splitCols);
+  const cellH = Math.floor(imgEl.naturalHeight / splitRows);
+
+  for (let row = 0; row < splitRows; row++) {
+    for (let col = 0; col < splitCols; col++) {
+      const canvas = document.createElement('canvas');
+      canvas.width = cellW;
+      canvas.height = cellH;
+      const ctx = canvas.getContext('2d');
+      if (ctx) {
+        ctx.drawImage(
+          imgEl,
+          col * cellW, row * cellH, cellW, cellH,
+          0, 0, cellW, cellH
+        );
+      }
+      results.push(canvas);
+    }
+  }
+
+  return results;
+}
+
+async function splitResultsToFrames(splitResults: HTMLCanvasElement[], frameName: string, frameDuration: number): Promise<Frame[]> {
+  const newFrames: Frame[] = [];
+
+  for (let i = 0; i < splitResults.length; i++) {
+    const canvas = splitResults[i];
+    const imgEl = new Image();
+    imgEl.src = canvas.toDataURL();
+
+    await new Promise<void>(resolve => {
+      imgEl.onload = () => resolve();
+      if (imgEl.complete && imgEl.naturalWidth > 0) resolve();
+    });
+
+    newFrames.push({
+      id: `frame_${Date.now()}_${Math.random().toString(36).substr(2, 9)}_${i}`,
+      imgEl: imgEl,
+      name: `${frameName} ${i + 1}`,
+      duration: frameDuration,
+    });
+  }
+
+  return newFrames;
 }
