@@ -413,7 +413,7 @@ export default function App() {
         </div>
       </header>
 
-      <div className="flex app-layout">
+      <div style={{ display: 'flex' }} className="app-layout">
         <div style={{ flex: 1, padding: '16px' }} className="main-content">
           <div className="card">
             <div className="card-header">
@@ -435,8 +435,7 @@ export default function App() {
                 ref={pixelCanvasRef}
                 width={res}
                 height={res}
-                className="max-w-full max-h-full"
-                style={{ imageRendering: 'pixelated' }}
+                style={{ maxWidth: '100%', maxHeight: '100%', imageRendering: 'pixelated' }}
               />
             </div>
 
@@ -452,7 +451,7 @@ export default function App() {
                 type="file"
                 accept="image/*"
                 multiple
-                className="hidden"
+                style={{ display: 'none' }}
                 onChange={handleFileSelect}
               />
               <p style={{ color: 'var(--text-secondary)' }}>
@@ -1263,7 +1262,7 @@ export default function App() {
                 ref={gifInputRef}
                 type="file"
                 accept=".gif"
-                className="hidden"
+                style={{ display: 'none' }}
                 onChange={async e => {
                   const file = e.target.files?.[0];
                   if (!file) return;

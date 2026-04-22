@@ -66,6 +66,10 @@ input[type="range"]::-webkit-slider-thumb {
   border-color: var(--border);
 }
 
+.opacity-50 {
+  opacity: 0.5;
+}
+
 ::-webkit-scrollbar {
   width: 8px;
   height: 8px;
@@ -405,6 +409,10 @@ select:focus {
 
 #root {
   min-height: 100vh;
+}
+
+.app-layout {
+  display: flex;
 }
 
 /* Responsive Layout */
