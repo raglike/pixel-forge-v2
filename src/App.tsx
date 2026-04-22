@@ -531,7 +531,7 @@ export default function App() {
               </div>
             </div>
 
-            <div className="canvas-container" style={{ width: 400, height: 400, marginBottom: '16px' }}>
+            <div className="canvas-container" style={{ width: '100%', minWidth: 200, maxWidth: 400, height: 300, marginBottom: '16px' }}>
               <canvas
                 ref={pixelCanvasRef}
                 width={res}
