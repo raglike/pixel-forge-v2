@@ -844,15 +844,18 @@ export default function App() {
               </button>
             </div>
 
-            <div style={{ marginBottom: '12px' }}>
-              <button
-                className="btn btn-primary"
-                style={{ width: '100%', justifyContent: 'center' }}
-                onClick={() => setShowGifPanel(true)}
-              >
-                🎬 导入 GIF
-              </button>
-            </div>
+            {versionConf.threePreview && (
+              <div style={{ marginBottom: '12px' }}>
+                <button
+                  className="btn btn-primary"
+                  style={{ width: '100%', justifyContent: 'center' }}
+                  onClick={() => { setShowSplitImageModal(true); }}
+                  disabled={frames.length === 0}
+                >
+                  🪓 图片拆分
+                </button>
+              </div>
+            )}
 
             {showPresetPanel && (
               <div style={{ marginBottom: '8px' }}>
@@ -893,16 +896,13 @@ export default function App() {
               >
                 动画组
               </button>
-              {versionConf.threePreview && (
-                <button
-                  className="btn btn-secondary"
-                  style={{ width: '100%', background: 'var(--accent)', borderColor: 'var(--accent)' }}
-                  onClick={() => { setShowSplitImageModal(true); }}
-                  disabled={frames.length === 0}
-                >
-                  🪓 图片拆分
-                </button>
-              )}
+              <button
+                className="btn btn-secondary"
+                style={{ width: '100%', justifyContent: 'center' }}
+                onClick={() => setShowGifPanel(true)}
+              >
+                🎬 导入 GIF
+              </button>
             </div>
           </div>
 
