@@ -3,8 +3,8 @@ import { useFrameManagement, useImageProcessor } from '@/hooks/useImageProcessor
 import { usePalette, usePaletteEditor } from '@/hooks/usePalette';
 import { useExport } from '@/hooks/useExport';
 import { BUILTIN_PALETTES, getAllPalettes, getCategories } from '@/data/palettes';
-import { getAllTemplates, getAnimationCategories } from '@/data/templates';
-import type { Frame, VersionConfig, ScalingAlgorithm, ProjectMeta } from '@/types';
+import { getAllTemplates, getAnimationCategories, getStateMachinePresets } from '@/data/templates';
+import type { Frame, VersionConfig, ScalingAlgorithm, ProjectMeta, StateMachine, AnimGroup, LoopMode } from '@/types';
 
 const VERSION_CONFIG: Record<string, VersionConfig> = {
   free: {
@@ -71,6 +71,9 @@ export default function App() {
   const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
   const [spriteCols, setSpriteCols] = useState(4);
 
+  // Loop Mode - Infinite Canvas
+  const [loopMode, setLoopMode] = useState<LoopMode>('none');
+
   const [paletteMode, setPaletteMode] = useState<'auto' | 'fixed'>('auto');
   const {
     currentPaletteName,
@@ -90,6 +93,30 @@ export default function App() {
   const [onionOpacity, setOnionOpacity] = useState(30);
   const [onionPrev, setOnionPrev] = useState(true);
   const [onionNext, setOnionNext] = useState(true);
+
+  // State Machine
+  const [showStateMachine, setShowStateMachine] = useState(false);
+  const [animStateMachine, setAnimStateMachine] = useState<StateMachine>({
+    initial: 'idle',
+    transitions: [
+      { from: 'idle', to: 'walk', event: 'move', condition: null },
+      { from: 'walk', to: 'idle', event: 'stop', condition: null },
+      { from: 'idle', to: 'jump', event: 'jump', condition: null },
+      { from: 'jump', to: 'idle', event: 'land', condition: null },
+    ],
+  });
+  const [currentAnimState, setCurrentAnimState] = useState('idle');
+  const [selectedStateMachinePreset, setSelectedStateMachinePreset] = useState<string>('platformer');
+
+  // Animation Groups
+  const [showAnimGroups, setShowAnimGroups] = useState(false);
+  const [animGroups, setAnimGroups] = useState<AnimGroup[]>([
+    { id: 'idle', name: 'idle', nameCn: '待机', color: '#1890ff', icon: '💤', frameIds: [] },
+    { id: 'walk', name: 'walk', nameCn: '行走', color: '#52c41a', icon: '🚶', frameIds: [] },
+    { id: 'run', name: 'run', nameCn: '跑步', color: '#fa8c16', icon: '🏃', frameIds: [] },
+    { id: 'attack', name: 'attack', nameCn: '攻击', color: '#f5222d', icon: '⚔️', frameIds: [] },
+  ]);
+  const [selectedAnimGroup, setSelectedAnimGroup] = useState<string | null>(null);
 
   const [projectMeta, setProjectMeta] = useState<ProjectMeta>({
     name: '未命名项目',
@@ -249,6 +276,23 @@ export default function App() {
     setIsExporting(false);
     setShowExportModal(false);
   }, [frames, res, spriteCols, projectMeta.name, exportTexturePacker]);
+
+  // PV button - Open in Pixel PV tool
+  const openInPixelPV = useCallback(() => {
+    const palette = BUILTIN_PALETTES[currentPaletteName] || BUILTIN_PALETTES['PICO-8'] || [];
+    const colors = palette.map((c: string) => c.startsWith('#') ? c : '#' + c).slice(0, 5);
+
+    const params = new URLSearchParams({
+      frames: frames.length.toString(),
+      colors: colors.join(','),
+      res: res.toString(),
+      fps: fps.toString(),
+      name: projectMeta.name || 'pixelforge',
+      strokeWidth: '4'
+    });
+
+    window.open('https://raglike.github.io/pixel-pv/?' + params.toString(), '_blank');
+  }, [frames.length, currentPaletteName, res, fps, projectMeta.name]);
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -538,6 +582,20 @@ export default function App() {
                   className="w-full"
                 />
               </div>
+
+              <div>
+                <label className="block text-sm mb-1">循环模式</label>
+                <select
+                  value={loopMode}
+                  onChange={e => setLoopMode(e.target.value as LoopMode)}
+                  className="w-full"
+                >
+                  <option value="none">无</option>
+                  <option value="horizontal">水平循环</option>
+                  <option value="vertical">垂直循环</option>
+                  <option value="both">双向循环</option>
+                </select>
+              </div>
             </div>
           </div>
 
@@ -643,8 +701,213 @@ export default function App() {
               >
                 导入 GIF
               </button>
+              <button
+                className="btn btn-secondary w-full"
+                onClick={() => setShowStateMachine(!showStateMachine)}
+              >
+                状态机
+              </button>
+              <button
+                className="btn btn-secondary w-full"
+                onClick={() => setShowAnimGroups(!showAnimGroups)}
+              >
+                动画组
+              </button>
             </div>
           </div>
+
+          {showAnimGroups && (
+            <div className="card">
+              <div className="card-header">
+                <span className="title-text">动画组</span>
+              </div>
+
+              <div className="mb-3">
+                <div className="flex flex-wrap gap-2">
+                  {animGroups.map(group => (
+                    <button
+                      key={group.id}
+                      className={`btn text-sm ${selectedAnimGroup === group.id ? 'btn-primary' : 'btn-secondary'}`}
+                      style={selectedAnimGroup === group.id ? { borderColor: group.color, background: group.color } : {}}
+                      onClick={() => setSelectedAnimGroup(selectedAnimGroup === group.id ? null : group.id)}
+                    >
+                      {group.icon} {group.nameCn}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {selectedAnimGroup && (
+                <div className="mb-3">
+                  <p className="text-sm mb-2">帧列表</p>
+                  <div className="flex flex-wrap gap-1 max-h-32 overflow-y-auto">
+                    {frames
+                      .filter(f => animGroups.find(g => g.id === selectedAnimGroup)?.frameIds.includes(f.id))
+                      .map(frame => (
+                        <div
+                          key={frame.id}
+                          className="flex items-center gap-1 bg-[var(--bg-main)] p-1 rounded"
+                        >
+                          <span className="text-xs">{frame.name}</span>
+                          <button
+                            className="text-xs text-red-500"
+                            onClick={() => {
+                              setAnimGroups(prev => prev.map(g =>
+                                g.id === selectedAnimGroup
+                                  ? { ...g, frameIds: g.frameIds.filter(id => id !== frame.id) }
+                                  : g
+                              ));
+                            }}
+                          >
+                            ×
+                          </button>
+                        </div>
+                      ))}
+                  </div>
+                  <p className="text-xs text-[var(--text-muted)] mt-2">
+                    点击下方帧列表中的帧可添加到组
+                  </p>
+                </div>
+              )}
+
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  id="new-group-name"
+                  placeholder="新组名称"
+                  className="flex-1 text-sm"
+                />
+                <button
+                  className="btn btn-primary text-sm"
+                  onClick={() => {
+                    const input = document.getElementById('new-group-name') as HTMLInputElement;
+                    if (input.value) {
+                      const newGroup: AnimGroup = {
+                        id: input.value.toLowerCase().replace(/\s+/g, '-'),
+                        name: input.value.toLowerCase(),
+                        nameCn: input.value,
+                        color: '#' + Math.floor(Math.random()*16777215).toString(16),
+                        icon: '🎭',
+                        frameIds: [],
+                      };
+                      setAnimGroups(prev => [...prev, newGroup]);
+                      input.value = '';
+                    }
+                  }}
+                >
+                  添加组
+                </button>
+              </div>
+            </div>
+          )}
+
+          {showStateMachine && (
+            <div className="card">
+              <div className="card-header">
+                <span className="title-text">状态机</span>
+                <select
+                  value={selectedStateMachinePreset}
+                  onChange={e => {
+                    setSelectedStateMachinePreset(e.target.value);
+                    const presets = getStateMachinePresets();
+                    const preset = presets.find(p => p.id === e.target.value);
+                    if (preset) {
+                      setAnimStateMachine({
+                        initial: preset.initial,
+                        transitions: preset.transitions,
+                      });
+                    }
+                  }}
+                  className="text-sm"
+                >
+                  {getStateMachinePresets().map(p => (
+                    <option key={p.id} value={p.id}>{p.name}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="mb-3">
+                <p className="text-sm mb-2">当前状态: <span className="font-bold text-accent">{currentAnimState}</span></p>
+                <div className="flex flex-wrap gap-2">
+                  {Array.from(new Set(animStateMachine.transitions.map(t => t.from))).map(state => (
+                    <button
+                      key={state}
+                      className={`btn text-sm ${currentAnimState === state ? 'btn-primary' : 'btn-secondary'}`}
+                      onClick={() => setCurrentAnimState(state)}
+                    >
+                      {state}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="mb-3">
+                <p className="text-sm font-medium mb-2">可用转换</p>
+                <div className="space-y-1 max-h-40 overflow-y-auto">
+                  {animStateMachine.transitions
+                    .filter(t => t.from === currentAnimState)
+                    .map((t, i) => (
+                      <div key={i} className="flex items-center justify-between text-sm bg-[var(--bg-main)] p-2 rounded">
+                        <span>{currentAnimState} → {t.to} (事件: {t.event})</span>
+                        <button
+                          className="btn btn-danger text-xs py-1 px-2"
+                          onClick={() => {
+                            setAnimStateMachine(prev => ({
+                              ...prev,
+                              transitions: prev.transitions.filter(tr =>
+                                !(tr.from === t.from && tr.to === t.to && tr.event === t.event)
+                              ),
+                            }));
+                          }}
+                        >
+                          删除
+                        </button>
+                      </div>
+                    ))}
+                  {animStateMachine.transitions.filter(t => t.from === currentAnimState).length === 0 && (
+                    <p className="text-sm text-[var(--text-muted)]">无可用转换</p>
+                  )}
+                </div>
+              </div>
+
+              <div className="flex gap-2">
+                <select
+                  id="sm-to-state"
+                  className="flex-1 text-sm"
+                >
+                  <option value="">选择目标状态...</option>
+                  {Array.from(new Set(animStateMachine.transitions.map(t => t.to))).map(state => (
+                    <option key={state} value={state}>{state}</option>
+                  ))}
+                </select>
+                <input
+                  type="text"
+                  id="sm-event"
+                  placeholder="事件名"
+                  className="flex-1 text-sm"
+                />
+                <button
+                  className="btn btn-primary text-sm"
+                  onClick={() => {
+                    const toSelect = document.getElementById('sm-to-state') as HTMLSelectElement;
+                    const eventInput = document.getElementById('sm-event') as HTMLInputElement;
+                    const toState = toSelect.value;
+                    const event = eventInput.value;
+                    if (toState && event) {
+                      setAnimStateMachine(prev => ({
+                        ...prev,
+                        transitions: [...prev.transitions, { from: currentAnimState, to: toState, event, condition: null }],
+                      }));
+                      toSelect.value = '';
+                      eventInput.value = '';
+                    }
+                  }}
+                >
+                  添加
+                </button>
+              </div>
+            </div>
+          )}
 
           {versionConf.onionSkin && (
             <div className="card">
@@ -729,6 +992,13 @@ export default function App() {
               )}
               <button className="btn btn-secondary w-full" onClick={handleExportTexturePacker}>
                 导出为 TexturePacker (.tps)
+              </button>
+              <button
+                className="btn btn-primary w-full"
+                onClick={openInPixelPV}
+                style={{ background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)' }}
+              >
+                制作游戏PV
               </button>
             </div>
 
