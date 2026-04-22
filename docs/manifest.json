@@ -1,0 +1,10 @@
+{
+  "name": "PixelForge",
+  "short_name": "PixelForge",
+  "description": "专业像素动画工具",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#f5f5f5",
+  "theme_color": "#1890ff",
+  "icons": []
+}
