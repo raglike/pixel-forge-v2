@@ -137,6 +137,10 @@ export type TransparencyFixMode = 'none' | 'fill' | 'delete';
 
 export type LoopMode = 'none' | 'horizontal' | 'vertical' | 'both';
 
+export type DrawingTool = 'brush' | 'eraser' | 'eyedropper' | 'select' | 'move';
+
+export type BoardMode = 'uniform' | 'independent';
+
 export interface ExportOptions {
   frames: Frame[];
   resolution: number;
@@ -147,4 +151,21 @@ export interface ExportOptions {
   frameNaming: string;
   asepriteLayerName?: string;
   asepriteFrameTags?: string;
+}
+
+export interface Board {
+  id: string;
+  name: string;
+  width: number;
+  height: number;
+  // Pixel data: key is "x,y", value is rgba string
+  pixels: Record<string, string>;
+  frames: Frame[];
+  currentFrameIndex: number;
+}
+
+export interface PixelSelect {
+  x: number;
+  y: number;
+  color: string;
 }

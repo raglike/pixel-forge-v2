@@ -7,7 +7,11 @@ import { getAllTemplates, getAnimationCategories, getStateMachinePresets } from 
 import { loadGIFFrames } from '@/utils/gifParser';
 import { exportPaletteHex, exportPaletteJson, exportPalettePal } from '@/utils/export';
 import { medianCut, hexPaletteToRgb } from '@/utils/pixelate';
-import type { Frame, VersionConfig, ScalingAlgorithm, ProjectMeta, StateMachine, AnimGroup, LoopMode } from '@/types';
+import type { Frame, VersionConfig, ScalingAlgorithm, ProjectMeta, StateMachine, AnimGroup, LoopMode, DrawingTool, Board, BoardMode, PixelSelect } from '@/types';
+import DrawingCanvas from '@/components/DrawingCanvas';
+import ZoomControls from '@/components/ZoomControls';
+import BoardManager from '@/components/BoardManager';
+import DrawingToolbar from '@/components/DrawingToolbar';
 
 const VERSION_CONFIG: Record<string, VersionConfig> = {
   free: {
@@ -128,6 +132,40 @@ export default function App() {
   ]);
   const [selectedAnimGroup, setSelectedAnimGroup] = useState<string | null>(null);
 
+  // ===== NEW FEATURES STATE =====
+
+  // Zoom
+  const [zoom, setZoom] = useState(400); // 100-800%
+  const [showZoomControls] = useState(true);
+
+  // Drawing Mode
+  const [drawingActive, setDrawingActive] = useState(false);
+  const [drawingTool, setDrawingTool] = useState<DrawingTool>('brush');
+  const [drawingColor, setDrawingColor] = useState('rgba(0,0,0,1)');
+  const [drawingPixels, setDrawingPixels] = useState<Record<string, string>>({});
+  const [pixelHistory, setPixelHistory] = useState<Record<string, string>[]>([]);
+  const [selectedPixel, setSelectedPixel] = useState<PixelSelect | null>(null);
+
+  // Boards
+  const [showBoardPanel, setShowBoardPanel] = useState(false);
+  const [boardMode, setBoardMode] = useState<BoardMode>('independent');
+  const [boards, setBoards] = useState<Board[]>([
+    {
+      id: 'board_1',
+      name: '画板 1',
+      width: 32,
+      height: 32,
+      pixels: {},
+      frames: [],
+      currentFrameIndex: 0,
+    },
+  ]);
+  const [currentBoardId, setCurrentBoardId] = useState<string | null>('board_1');
+
+  // Get current board
+  const currentBoard = boards.find(b => b.id === currentBoardId) || boards[0];
+  const currentBoardPixels = currentBoardId === boards[0].id ? drawingPixels : currentBoard.pixels;
+
   const [projectMeta, setProjectMeta] = useState<ProjectMeta>({
     name: '未命名项目',
     author: '',
@@ -207,6 +245,126 @@ export default function App() {
   const handleDragOver = useCallback((e: React.DragEvent) => {
     e.preventDefault();
   }, []);
+
+  // ===== NEW FEATURE CALLBACKS =====
+
+  // Drawing callbacks
+  const handlePixelChange = useCallback((newPixels: Record<string, string>) => {
+    if (currentBoardId === boards[0].id) {
+      setPixelHistory(prev => [...prev.slice(-50), drawingPixels]);
+      setDrawingPixels(newPixels);
+    } else {
+      setBoards(prev => prev.map(b =>
+        b.id === currentBoardId ? { ...b, pixels: newPixels } : b
+      ));
+    }
+  }, [currentBoardId, boards, drawingPixels]);
+
+  const handlePixelSelect = useCallback((pixel: PixelSelect | null) => {
+    setSelectedPixel(pixel);
+    if (pixel && drawingTool === 'eyedropper') {
+      setDrawingColor(pixel.color);
+    }
+  }, [drawingTool]);
+
+  const handleUndoPixel = useCallback(() => {
+    if (pixelHistory.length === 0) return;
+    const prev = pixelHistory[pixelHistory.length - 1];
+    setDrawingPixels(prev);
+    setPixelHistory(php => php.slice(0, -1));
+  }, [pixelHistory]);
+
+  const handleClearPixels = useCallback(() => {
+    if (currentBoardId === boards[0].id) {
+      setPixelHistory(prev => [...prev.slice(-50), drawingPixels]);
+      setDrawingPixels({});
+    } else {
+      setBoards(prev => prev.map(b =>
+        b.id === currentBoardId ? { ...b, pixels: {} } : b
+      ));
+    }
+  }, [currentBoardId, boards, drawingPixels]);
+
+  // Board management callbacks
+  const handleBoardSelect = useCallback((id: string) => {
+    setCurrentBoardId(id);
+  }, []);
+
+  const handleBoardAdd = useCallback(() => {
+    const newBoard: Board = {
+      id: `board_${Date.now()}`,
+      name: `画板 ${boards.length + 1}`,
+      width: boardMode === 'uniform' ? res : 32,
+      height: boardMode === 'uniform' ? res : 32,
+      pixels: {},
+      frames: [],
+      currentFrameIndex: 0,
+    };
+    setBoards(prev => [...prev, newBoard]);
+    setCurrentBoardId(newBoard.id);
+  }, [boards.length, boardMode, res]);
+
+  const handleBoardDelete = useCallback((id: string) => {
+    if (boards.length <= 1) return;
+    setBoards(prev => prev.filter(b => b.id !== id));
+    if (currentBoardId === id) {
+      setCurrentBoardId(boards.find(b => b.id !== id)?.id || null);
+    }
+  }, [boards, currentBoardId]);
+
+  const handleBoardRename = useCallback((id: string, name: string) => {
+    setBoards(prev => prev.map(b => b.id === id ? { ...b, name } : b));
+  }, []);
+
+  const handleBoardModeChange = useCallback((mode: BoardMode) => {
+    setBoardMode(mode);
+  }, []);
+
+  const handleBoardDimensionsChange = useCallback((id: string, width: number, height: number) => {
+    setBoards(prev => prev.map(b => b.id === id ? { ...b, width, height } : b));
+  }, []);
+
+  // Apply drawn pixels to current frame
+  const handleApplyPixelsToFrame = useCallback(() => {
+    if (!currentFrame?.imgEl || Object.keys(currentBoardPixels).length === 0) return;
+
+    const canvas = document.createElement('canvas');
+    canvas.width = currentBoard.width;
+    canvas.height = currentBoard.height;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+
+    // Draw original frame
+    ctx.imageSmoothingEnabled = false;
+    ctx.drawImage(currentFrame.imgEl, 0, 0, currentBoard.width, currentBoard.height);
+
+    // Overlay drawn pixels
+    Object.entries(currentBoardPixels).forEach(([key, rgba]) => {
+      const [xStr, yStr] = key.split(',');
+      const x = parseInt(xStr, 10);
+      const y = parseInt(yStr, 10);
+      ctx.fillStyle = rgba;
+      ctx.fillRect(x, y, 1, 1);
+    });
+
+    // Create new image and update frame
+    const newImg = new Image();
+    newImg.onload = () => {
+      const updatedFrame: Frame = {
+        ...currentFrame,
+        imgEl: newImg,
+      };
+      setFrames(prev => prev.map((f, i) => i === currentFrameIndex ? updatedFrame : f));
+
+      // Clear pixels after applying
+      if (currentBoardId === boards[0].id) {
+        setDrawingPixels({});
+      } else {
+        setBoards(prev => prev.map(b => b.id === currentBoardId ? { ...b, pixels: {} } : b));
+      }
+    };
+    newImg.src = canvas.toDataURL();
+  }, [currentFrame, currentBoardPixels, currentBoard, currentFrameIndex, currentBoardId, boards, setFrames]);
 
   const drawCurrentFrame = useCallback(() => {
     const canvas = pixelCanvasRef.current;
@@ -429,9 +587,14 @@ export default function App() {
       currentFrameIndex,
       projectMeta,
       version,
+      zoom,
+      boardMode,
+      boards,
+      currentBoardId,
+      drawingPixels,
     };
     localStorage.setItem('pixelforge_autosave_v2', JSON.stringify(autosaveData));
-  }, [frames, res, colors, paletteMode, currentPaletteName, fps, spriteCols, frameNaming, currentFrameIndex, projectMeta, version]);
+  }, [frames, res, colors, paletteMode, currentPaletteName, fps, spriteCols, frameNaming, currentFrameIndex, projectMeta, version, zoom, boardMode, boards, currentBoardId, drawingPixels]);
 
   useEffect(() => {
     const saved = localStorage.getItem('pixelforge_autosave_v2');
@@ -475,6 +638,11 @@ export default function App() {
         if (data.currentFrameIndex !== undefined) setCurrentFrameIndex(data.currentFrameIndex);
         if (data.projectMeta) setProjectMeta(data.projectMeta);
         if (data.version) setVersion(data.version);
+        if (data.zoom) setZoom(data.zoom);
+        if (data.boardMode) setBoardMode(data.boardMode);
+        if (data.boards && data.boards.length > 0) setBoards(data.boards);
+        if (data.currentBoardId) setCurrentBoardId(data.currentBoardId);
+        if (data.drawingPixels) setDrawingPixels(data.drawingPixels);
       } catch (_e) {
         console.warn('Autosave restore failed:', _e);
       }
@@ -538,13 +706,91 @@ export default function App() {
               </div>
             </div>
 
-            <div className="canvas-container" style={{ width: '100%', minWidth: 200, maxWidth: 400, height: 300, marginBottom: '16px' }}>
-              <canvas
-                ref={pixelCanvasRef}
-                width={res}
-                height={res}
-                style={{ maxWidth: '100%', maxHeight: '100%', imageRendering: 'pixelated' }}
-              />
+            {/* Canvas Area with Zoom and Drawing */}
+            <div style={{ marginBottom: '16px' }}>
+              {/* Zoom Controls */}
+              {showZoomControls && (
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px', flexWrap: 'wrap', gap: '8px' }}>
+                  <ZoomControls zoom={zoom} onZoomChange={setZoom} />
+                  <div style={{ display: 'flex', gap: '8px' }}>
+                    <button
+                      className="btn btn-secondary"
+                      style={{ fontSize: '11px', padding: '4px 8px' }}
+                      onClick={() => setShowBoardPanel(!showBoardPanel)}
+                    >
+                      📋 画板 {boards.length}
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* Main Canvas Container */}
+              <div
+                className="canvas-container"
+                style={{
+                  width: '100%',
+                  minWidth: 200,
+                  maxWidth: 600,
+                  height: 400,
+                  marginBottom: '12px',
+                  position: 'relative',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  background: '#0d0d1a',
+                  overflow: 'auto',
+                }}
+              >
+                <div
+                  style={{
+                    position: 'relative',
+                    imageRendering: 'pixelated',
+                    transform: `scale(${zoom / 100})`,
+                    transformOrigin: 'center center',
+                  }}
+                >
+                  <canvas
+                    ref={pixelCanvasRef}
+                    width={res}
+                    height={res}
+                    style={{
+                      display: 'block',
+                      imageRendering: 'pixelated',
+                      width: res,
+                      height: res,
+                    }}
+                  />
+                  {/* Drawing Canvas Overlay */}
+                  <DrawingCanvas
+                    width={res}
+                    height={res}
+                    zoom={1}
+                    tool={drawingTool}
+                    color={drawingColor}
+                    pixels={currentBoardPixels}
+                    selectedPixel={selectedPixel}
+                    onPixelChange={handlePixelChange}
+                    onPixelSelect={handlePixelSelect}
+                    visible={drawingActive && frames.length > 0}
+                  />
+                </div>
+              </div>
+
+              {/* Apply Drawn Pixels Button */}
+              {drawingActive && Object.keys(currentBoardPixels).length > 0 && frames.length > 0 && (
+                <div style={{ display: 'flex', gap: '8px', marginBottom: '8px' }}>
+                  <button
+                    className="btn btn-primary"
+                    style={{ fontSize: '12px' }}
+                    onClick={handleApplyPixelsToFrame}
+                  >
+                    ✓ 应用像素到当前帧
+                  </button>
+                  <span style={{ fontSize: '11px', color: 'var(--text-muted)', lineHeight: '32px' }}>
+                    {Object.keys(currentBoardPixels).length} 像素已绘制
+                  </span>
+                </div>
+              )}
             </div>
 
             {frames.length === 0 ? (
@@ -751,6 +997,45 @@ export default function App() {
               </div>
             </div>
           </div>
+
+          {/* Drawing Tools Panel */}
+          <div className="card">
+            <div className="card-header">
+              <span className="title-text">🖌️ 手绘</span>
+            </div>
+            <DrawingToolbar
+              active={drawingActive}
+              tool={drawingTool}
+              color={drawingColor}
+              paletteColors={currentPaletteRgb.map(rgb => `rgb(${rgb[0]},${rgb[1]},${rgb[2]})`)}
+              onToggle={() => setDrawingActive(!drawingActive)}
+              onToolChange={setDrawingTool}
+              onColorChange={setDrawingColor}
+              onClearPixels={handleClearPixels}
+              onUndoPixel={handleUndoPixel}
+              canUndo={pixelHistory.length > 0}
+            />
+          </div>
+
+          {/* Board Manager Panel */}
+          {showBoardPanel && (
+            <div className="card">
+              <div className="card-header">
+                <span className="title-text">📋 画板管理</span>
+              </div>
+              <BoardManager
+                boards={boards}
+                currentBoardId={currentBoardId}
+                boardMode={boardMode}
+                onBoardSelect={handleBoardSelect}
+                onBoardAdd={handleBoardAdd}
+                onBoardDelete={handleBoardDelete}
+                onBoardRename={handleBoardRename}
+                onBoardModeChange={handleBoardModeChange}
+                onBoardDimensionsChange={handleBoardDimensionsChange}
+              />
+            </div>
+          )}
 
           <div className="card">
             <div className="card-header">
